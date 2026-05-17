@@ -149,6 +149,40 @@ The GUI lets you:
   appending text format as the CLI. A **Save results** button is also
   available for manual saves, and **Clear** wipes the input and results.
 
+## Generating candidate usernames
+
+If you want to feed a big batch of candidate handles into the checker
+(for example, every possible 4-letter name), use the bundled
+`generate.py` script. It writes one username per line to a `.txt` file
+that the checker can then read with `--input`.
+
+```bash
+# Generate 1000 random 4-letter names
+python generate.py --length 4 --count 1000 -o names.txt
+
+# Generate every 4-letter combination (a-z) - 456,976 lines
+python generate.py --mode all --length 4 -o all_4letter.txt
+
+# Then feed it into the checker
+python checker.py --input names.txt --workers 16
+```
+
+You can also load any of these `.txt` files into the GUI with the
+**Load from file...** button.
+
+Useful flags:
+
+- `--mode {all,random}` - emit every combination, or sample random
+  unique strings (default: `random`).
+- `--length N` / `-n N` - username length (default: `4`).
+- `--count N` / `-c N` - how many to write (random mode default: 1000;
+  in `all` mode, omit to dump every combination).
+- `--charset {letters,alnum,full}` - `letters` is `a-z`, `alnum` adds
+  `0-9`, `full` also adds `.` and `_` while enforcing Discord's rule
+  that names can't start or end with `.` or contain `..`.
+- `--seed N` - RNG seed for reproducible random output.
+- `--append` - append to the output file instead of overwriting it.
+
 ## How it works
 
 The script POSTs to:
