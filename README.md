@@ -1,209 +1,247 @@
 # DiscordUserAvaibleChecker
 
-A small Python tool that checks whether a Discord **unique username** (the
-new `@handle` style name, e.g. `coolname`) is available or already taken.
+A fast, native Discord **unique-username** (`@handle`) availability
+checker, written in Rust. Ships two binaries from a single workspace:
 
-It works by calling Discord's public, unauthenticated username-attempt
-endpoint, the same one the Discord client itself uses while you are picking
-a new handle. No login or token is required.
+- `dua` — concurrent async CLI with a `hunt` mode dedicated to
+  3- and 4-letter handles.
+- `dua-gui` — dark-themed [`egui`](https://github.com/emilk/egui) desktop
+  GUI with a virtualized results table for tens of thousands of rows.
 
-Comes in two flavors:
+Both surfaces talk to Discord's public, unauthenticated
+`unique-username/username-attempt-unauthed` endpoint — the same call the
+Discord web client makes while you are picking a new handle. No login or
+token is required.
 
-- A fast concurrent **CLI** (`checker.py`)
-- A simple **GUI** (`gui.py`) built with `tkinter`
-
-> Note: this checks the new unique handles only, not legacy `Name#1234`
+> This checks the new unique handles only, not legacy `Name#1234`
 > discriminator usernames.
 
 ## Requirements
 
-- Python 3.9+
-- The [`requests`](https://pypi.org/project/requests/) library
-- `tkinter` (ships with Python on most platforms; only needed for the GUI)
+- Rust **1.74+** (install via [rustup](https://rustup.rs/)).
+- For the GUI on Linux, you need the usual X11/Wayland deps that any
+  `egui` app needs (`libxcb`, `libgl1`, `libxkbcommon`, `libwayland-*`).
+  Most desktop distros already have them.
 
 ## Install
 
-Clone the repo and install dependencies (a virtual environment is
-recommended):
+Clone and build a release binary:
 
 ```bash
 git clone https://github.com/kirodev2277-max/DiscordUserAvaibleChecker.git
 cd DiscordUserAvaibleChecker
 
-python3 -m venv .venv
-source .venv/bin/activate         # on Windows: .venv\Scripts\activate
+# CLI only (smallest build, no GUI dependencies)
+cargo build --release --bin dua --no-default-features
 
-pip install -r requirements.txt
+# CLI + GUI
+cargo build --release --bins
 ```
 
-## CLI usage
-
-### Check usernames
+After a release build the binaries live in `target/release/`:
 
 ```bash
-python checker.py alice bob charlie
+./target/release/dua --help
+./target/release/dua-gui
 ```
 
-Example output:
+Or run straight from source while you iterate:
 
+```bash
+cargo run --release --bin dua -- check alice bob charlie
+cargo run --release --bin dua-gui
 ```
-[-] alice: taken
-[+] bob: AVAILABLE
+
+## CLI
+
+```text
+dua <COMMAND>
+
+Commands:
+  check     Check one or more handles
+  generate  Generate a candidate handle list (3 or 4 letters)
+  hunt      Generate + check in a single streaming pipeline
+  watch     Poll a single handle on an interval until it frees up
+```
+
+### `dua check`
+
+```bash
+dua check alice bob charlie
+dua check --input names.txt --workers 16 --delay-ms 25
+```
+
+Output:
+
+```text
+[+] alice: AVAILABLE
+[-] bob: taken
 [!] charlie: invalid (username: Username must be between 2 and 32 in length.)
 
-Saved 3 result(s) to results.txt
+summary: 1 available · 1 taken · 1 invalid · 0 rate-limited · 0 error
+Appended 3 line(s) to results.txt
 ```
 
 Legend:
 
 - `[+]` available
 - `[-]` taken
-- `[!]` invalid (Discord rejected the name, reason shown in parentheses)
-- `[?]` error talking to Discord (network problem, rate limit, etc.)
+- `[!]` invalid (Discord rejected the name; reason in parens)
+- `[?]` rate-limited or transport/error
 
-### Check from a file
+By default results are appended to `results.txt` in the legacy
+text-log format so any existing scripts you have keep working:
 
-You can also feed a text file of usernames (one per line, or comma-separated,
-or a mix). It can be combined with names on the command line:
-
-```bash
-python checker.py --input usernames.txt
-python checker.py --input usernames.txt extra_name another_name
-```
-
-### Interactive mode
-
-Run with no arguments and no `--input` to enter an interactive prompt:
-
-```bash
-python checker.py
-```
-
-```
-Discord username availability checker
-Type a username to check, or 'quit' / 'exit' to stop.
-> bob
-[+] bob: AVAILABLE
-> alice
-[-] alice: taken
-> quit
-```
-
-You can also stop with `Ctrl-C`.
-
-### Saved results file
-
-After a batch check, results are appended to `results.txt` in the current
-directory. The first time the file is created it gets a header line; later
-runs simply append more lines, so the file accumulates everything you've
-ever checked. Each line looks like:
-
-```
+```text
 # Discord username check results
-alice - TAKEN
-bob - AVAILABLE
+alice - AVAILABLE
+bob - TAKEN
 charlie - INVALID: username: Username must be between 2 and 32 in length.
 ```
 
-Use `--output PATH` to write somewhere else, or `--no-save` to skip the file.
+Use `--output PATH` to redirect, `--no-save` to skip the file, or
+`--jsonl PATH` to *also* append a structured JSON Lines log.
 
-### Options
+### `dua generate`
 
+Generation is **restricted to 3- or 4-letter handles** — the shapes
+worth hunting for. Two modes:
+
+```bash
+# Every 3-letter combination over a-z (17,576 lines).
+dua generate --length 3 --mode all -o all_3.txt
+
+# 5,000 random 4-letter alnum candidates (no duplicates).
+dua generate --length 4 --mode random --count 5000 --charset alnum -o names.txt
+
+# Reproducible random output via --seed.
+dua generate --length 4 --mode random --count 1000 --seed 42 -o seeded.txt
 ```
-python checker.py --help
+
+Flags:
+
+- `-n, --length 3|4` — handle length (required; the only supported sizes).
+- `--mode all|random` — exhaustive lexicographic enumeration, or
+  uniform unique sampling.
+- `--charset letters|alnum` — `a-z` (26) or `a-z` + `0-9` (36).
+- `-c, --count N` — how many to emit. Defaults to 1,000 for random,
+  the full space for `all`.
+- `--seed N` — reproducible random output.
+- `-o, --output PATH` — destination file (default `usernames.txt`).
+- `--append` — append rather than overwrite.
+
+Search-space sizes (so you know what you're getting into):
+
+| Length | letters (a-z) | alnum (a-z + 0-9) |
+|-------:|--------------:|------------------:|
+| 3      | 17,576        | 46,656            |
+| 4      | 456,976       | 1,679,616         |
+
+### `dua hunt`
+
+The headline command. One pass that:
+
+1. Generates 3- or 4-letter candidates per your flags.
+2. Streams them through the checker with N async workers.
+3. Prints every `AVAILABLE` hit as it lands (other statuses are
+   counted silently).
+4. Appends a full text log to `results.txt`.
+5. Optionally streams just the hits to a separate file.
+
+```bash
+# 500 random 4-letter handles, 16 workers, 25ms stagger, save hits.
+dua hunt --length 4 --mode random --count 500 --workers 16 \
+         --delay-ms 25 --hits-file hits.txt
+
+# Exhaustive 3-letter sweep, stop after the first 25 hits.
+dua hunt --length 3 --mode all --workers 24 --stop-after 25
 ```
 
-- `--input PATH`, `-i PATH` - read usernames from a text file (one per
-  line or comma-separated). Combined with any usernames given on the
-  command line.
-- `--workers N` - number of concurrent worker threads for batch checks
-  (default: `8`). Use `1` to force sequential checks.
-- `--delay SECONDS` - seconds to wait before each request when checking
-  multiple names (default: `0`). Increase this if Discord starts
-  rate-limiting you.
-- `--output PATH`, `-o PATH` - file to append results to
-  (default: `results.txt`).
-- `--no-save` - don't write a results file.
+Flags worth knowing:
 
-The CLI handles HTTP 429 rate-limit responses by reading `Retry-After`
-(from the header or JSON body), sleeping, and retrying once.
+- `--workers N` — concurrent in-flight requests (default 16).
+- `--delay-ms N` — stagger between task starts (default 25). Bump it
+  up if Discord starts rate-limiting you.
+- `--stop-after N` — cancel the rest of the run after this many
+  AVAILABLE hits (useful for exhaustive sweeps).
+- `--hits-file PATH` — append only AVAILABLE handles, one per line.
+
+### `dua watch`
+
+Poll a single handle until it becomes available, then ring the
+terminal bell and exit:
+
+```bash
+dua watch coolname --interval-secs 30 --max-attempts 0
+```
 
 ## GUI
 
-Launch the desktop GUI with:
-
 ```bash
-python gui.py
+cargo run --release --bin dua-gui
 ```
 
-The GUI lets you:
+Two tabs:
 
-- Paste or type usernames into a text box (one per line, or comma-separated,
-  or both), or load them from a `.txt` file with **Load from file...**.
-- Click **Check** to run a concurrent batch check in the background. The UI
-  stays responsive: a progress bar and `Checking N/M...` label update as
-  results stream in.
-- See each result in a color-coded table (green = available, red = taken,
-  orange = invalid, gray = error).
-- Auto-save results to `results.txt` (or any path you pick) using the same
-  appending text format as the CLI. A **Save results** button is also
-  available for manual saves, and **Clear** wipes the input and results.
+- **Check** — paste or load a list of handles, set workers/delay,
+  click ▶ Check. Results stream into a colour-coded virtualized
+  table; toggle the count chips to filter.
+- **Hunt 3/4-letter** — pick length (3 or 4), mode (random / all),
+  charset (letters / alnum), and optional count + seed + stop-after.
+  Click 🎯 Hunt and watch AVAILABLE hits land live.
 
-## Generating candidate usernames
+Auto-save appends to `results.txt` in the same legacy text format the
+CLI uses. The Save now button performs an explicit append at any time.
 
-If you want to feed a big batch of candidate handles into the checker
-(for example, every possible 4-letter name), use the bundled
-`generate.py` script. It writes one username per line to a `.txt` file
-that the checker can then read with `--input`.
+To preseed input on launch from a file:
 
 ```bash
-# Generate 1000 random 4-letter names
-python generate.py --length 4 --count 1000 -o names.txt
-
-# Generate every 4-letter combination (a-z) - 456,976 lines
-python generate.py --mode all --length 4 -o all_4letter.txt
-
-# Then feed it into the checker
-python checker.py --input names.txt --workers 16
+DUA_INPUT_FILE=names.txt dua-gui
 ```
 
-You can also load any of these `.txt` files into the GUI with the
-**Load from file...** button.
+## Configuration knobs that matter
 
-Useful flags:
-
-- `--mode {all,random}` - emit every combination, or sample random
-  unique strings (default: `random`).
-- `--length N` / `-n N` - username length (default: `4`).
-- `--count N` / `-c N` - how many to write (random mode default: 1000;
-  in `all` mode, omit to dump every combination).
-- `--charset {letters,alnum,full}` - `letters` is `a-z`, `alnum` adds
-  `0-9`, `full` also adds `.` and `_` while enforcing Discord's rule
-  that names can't start or end with `.` or contain `..`.
-- `--seed N` - RNG seed for reproducible random output.
-- `--append` - append to the output file instead of overwriting it.
+- **Workers** — concurrent in-flight HTTP requests. 8–16 is a sane
+  default; 24–32 is fine on a fast connection but will earn you 429s
+  faster.
+- **Delay** — milliseconds between task starts. Combined with worker
+  count it caps your effective request rate.
+- **Retry-After** — when Discord returns `429`, the CLI honours
+  `Retry-After ≤ 10s` and auto-retries once; longer waits surface as
+  `rate-limited` for you to handle.
 
 ## How it works
 
-The script POSTs to:
-
-```
+```text
 POST https://discord.com/api/v9/unique-username/username-attempt-unauthed
 Content-Type: application/json
 {"username": "<name>"}
 ```
 
-A `200 OK` response with `{"taken": true|false}` tells us whether the handle
-is already in use. Validation errors (too short, invalid characters, etc.)
-come back as `400` / `422` with a JSON body, and the script surfaces the
-error message from Discord.
+A `200 OK` with `{"taken": true|false}` decides
+available vs. taken. Validation errors return `400`/`422` with a JSON
+body that we surface as `INVALID`. `429` is treated as rate-limit
+back-pressure.
 
-For batch checks the CLI and GUI share the same `check_many` function from
-`checker.py`, which uses a `ThreadPoolExecutor` over a single shared
-`requests.Session` and returns results in input order.
+## Project layout
+
+```text
+.
+├── Cargo.toml
+├── src/
+│   ├── lib.rs          # public surface
+│   ├── checker.rs      # async HTTP client + batch runner
+│   ├── generator.rs    # 3/4-letter exhaustive + random generators
+│   ├── persistence.rs  # text + JSONL logs, input parsing
+│   ├── result.rs       # CheckResult / Status
+│   └── bin/
+│       ├── dua.rs      # CLI binary
+│       └── dua_gui.rs  # GUI binary
+└── README.md
+```
 
 ## Disclaimer
 
-This project is not affiliated with Discord. It uses a public endpoint
-intended for the Discord client. Be polite: keep request volume low and do
-not use this to bulk-scrape or mass-register usernames.
+Not affiliated with Discord. This uses a public endpoint intended for
+the Discord client. Be polite: keep request volume modest and don't
+use it to bulk-scrape or mass-register handles.
