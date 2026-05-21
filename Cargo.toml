@@ -1,0 +1,48 @@
+[package]
+name = "dua-checker"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Discord unique-username availability checker (CLI + GUI)"
+license = "MIT"
+repository = "https://github.com/kirodev2277-max/DiscordUserAvaibleChecker"
+readme = "README.md"
+
+[lib]
+name = "dua_checker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dua"
+path = "src/bin/dua.rs"
+
+[[bin]]
+name = "dua-gui"
+path = "src/bin/dua_gui.rs"
+required-features = ["gui"]
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:egui"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+console = "0.15"
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"], optional = true }
+egui = { version = "0.29", optional = true }
+indicatif = "0.17"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

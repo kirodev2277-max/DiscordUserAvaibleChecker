@@ -1,27 +1,23 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyc
-*.pyo
+# --- Rust ---
+/target
+**/*.rs.bk
+Cargo.lock.bak
 
-# Virtual environments
-.venv/
-venv/
-env/
-ENV/
+# --- Tool output ---
+results.txt
+results.jsonl
+usernames.txt
+hits.txt
 
-# Packaging / build
-build/
-dist/
-*.egg-info/
-.eggs/
-
-# Editors / OS
+# --- Editors / OS ---
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+*.swp
 
-# Runtime artifacts
-results.txt
+# --- Legacy Python (kept so historic checkouts stay clean) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
